@@ -1,0 +1,42 @@
+{
+  "name": "laser-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build:app": "npm run build:renderer && npm run build:main",
+    "preview": "vite preview",
+    "start": "npm run build:app && npm exec electron -- . --disable-gpu --disable-software-rasterizer --no-sandbox"
+  },
+  "dependencies": {
+    "@laser/canvas-engine": "file:../../packages/canvas-engine",
+    "@laser/gcode-engine": "file:../../packages/gcode-engine",
+    "@laser/machine-driver": "file:../../packages/machine-driver",
+    "@laser/plugin-sdk": "file:../../packages/plugin-sdk",
+    "@laser/shared-types": "file:../../packages/shared-types",
+    "@laser/shared-ui": "file:../../packages/shared-ui",
+    "@serialport/parser-readline": "^13.0.0",
+    "dxf-parser": "^1.1.2",
+    "electron-updater": "^6.8.3",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^1.17.0",
+    "pixi.js": "^8.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "serialport": "^13.0.0",
+    "zustand": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^27.0.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.6",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.1"
+  }
+}

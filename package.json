@@ -1,0 +1,33 @@
+{
+  "name": "laser-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Monorepo para software profissional de controle CNC laser inspirado no LightBurn.",
+  "author": "Laser Studio Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "cd apps/desktop && npm exec electron -- . --disable-gpu --disable-software-rasterizer --no-sandbox",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.6",
+    "turbo": "^1.10.12",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.1"
+  },
+  "packageManager": "npm@10.9.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

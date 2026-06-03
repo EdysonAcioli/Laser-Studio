@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "lib": ["DOM", "ES2020", "DOM.Iterable"],
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@laser/shared-types": ["packages/shared-types/src"],
+      "@laser/shared-ui": ["packages/shared-ui/src"],
+      "@laser/canvas-engine": ["packages/canvas-engine/src"],
+      "@laser/gcode-engine": ["packages/gcode-engine/src"],
+      "@laser/machine-driver": ["packages/machine-driver/src"]
+    }
+  },
+  "include": ["apps/**/*", "packages/**/*"]
+}
