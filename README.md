@@ -1,6 +1,45 @@
 # Laser Studio
 
-Projeto open source para software desktop de controle CNC laser, inspirado no LightBurn.
+Laser Studio é um software open source de controle CNC laser para desktop, focado em edição vetorial, geração de G-code e conexão com máquinas reais.
+
+> Este repositório foi preparado para a comunidade: contribuições, issues e pull requests são bem-vindos.
+
+## O que é o Laser Studio
+
+O objetivo do projeto é oferecer uma base de software livre para criadores e makers que usam cortadoras e gravadoras a laser. O app combina:
+
+- editor vetorial básico com desenho, caminhos, textos e importação de SVG
+- painel de propriedades e camadas
+- geração de G-code para diferentes firmwares
+- simulação de trajetória
+- controle básico de máquina e jog
+
+## Suporte a máquinas e firmwares
+
+Atualmente o Laser Studio suporta:
+
+- `GRBL`
+- `Marlin`
+- `Ruida`
+- `Smoothieware`
+- `ESP32 CNC`
+
+O driver de máquina é projetado para suportar conexões via `serial` / `COM` e já prevê opções futuras de `wifi` e `ethernet`.
+
+### Tipos de máquinas alvo
+
+- cortadoras e gravadoras a laser hobby / semi-profissionais
+- máquinas CNC com firmware compatível com G-code
+- sistemas embarcados baseados em ESP32
+
+## Recursos principais
+
+- Edição de formas vetoriais: retângulos, linhas, círculos, textos, paths e Bézier
+- Importação de SVG com preservação de traços e preenchimentos
+- Geração de G-code com lógica de passes, velocidade, potência e preenchimento
+- Simulação visual de trajetória do cabeçote
+- Conexão de máquina com comandos de jog, home e stop
+- Painel de máquina com status e posição atual
 
 ## Estrutura do repositório
 
@@ -11,9 +50,9 @@ Projeto open source para software desktop de controle CNC laser, inspirado no Li
 - `packages/shared-ui`: componentes UI compartilhados.
 - `packages/shared-types`: tipos TypeScript centrais.
 
-## Comunidade
+## Começando a contribuir
 
-Este projeto está aberto para contribuições. Veja também:
+Veja também os arquivos de comunidade:
 
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
@@ -41,13 +80,12 @@ npm --workspace=apps/desktop run dev
 npm --workspace=apps/desktop run start
 ```
 
-## Ideias para contribuir
+## Como contribuir
 
-- corrigir bugs de edição e seleção
-- melhorar suporte a SVG/DXF
-- adicionar simulação mais fiel ao G-code
-- ampliar o painel de máquina e jog
-- melhorar documentação e integração com dispositivos reais
+- envie issues para bugs e novos recursos
+- abra pull requests com descrições claras
+- mantenha as mudanças pequenas e focadas
+- verifique o TypeScript e o comportamento antes de enviar
 
 ## Licença
 
