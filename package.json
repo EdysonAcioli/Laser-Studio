@@ -5,6 +5,14 @@
   "description": "Monorepo para software profissional de controle CNC laser inspirado no LightBurn.",
   "author": "Laser Studio Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/laser-studio/laser-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/laser-studio/laser-studio/issues"
+  },
+  "homepage": "https://github.com/laser-studio/laser-studio#readme",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",

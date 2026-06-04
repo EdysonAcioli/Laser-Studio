@@ -1,8 +1,8 @@
 # Laser Studio
 
-Monorepo inicial para software desktop profissional de controle CNC laser inspirado no LightBurn.
+Projeto open source para software desktop de controle CNC laser, inspirado no LightBurn.
 
-## Estrutura
+## Estrutura do repositório
 
 - `apps/desktop`: aplicação Electron + Vite + React com interface de edição e preview.
 - `packages/canvas-engine`: engine vetorial básica para gerenciamento de objetos.
@@ -11,7 +11,17 @@ Monorepo inicial para software desktop profissional de controle CNC laser inspir
 - `packages/shared-ui`: componentes UI compartilhados.
 - `packages/shared-types`: tipos TypeScript centrais.
 
-## Execução
+## Comunidade
+
+Este projeto está aberto para contribuições. Veja também:
+
+- [CONTRIBUTING.md](./CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+- [.github/ISSUE_TEMPLATE/bug_report.md](./.github/ISSUE_TEMPLATE/bug_report.md)
+- [.github/ISSUE_TEMPLATE/feature_request.md](./.github/ISSUE_TEMPLATE/feature_request.md)
+- [.github/PULL_REQUEST_TEMPLATE.md](./.github/PULL_REQUEST_TEMPLATE.md)
+
+## Execução local
 
 1. Instale dependências:
 
@@ -31,8 +41,14 @@ npm --workspace=apps/desktop run dev
 npm --workspace=apps/desktop run start
 ```
 
-Se você quiser usar `pnpm` no futuro, instale-o globalmente com:
+## Ideias para contribuir
 
-```bash
-npm install -g pnpm
-```
+- corrigir bugs de edição e seleção
+- melhorar suporte a SVG/DXF
+- adicionar simulação mais fiel ao G-code
+- ampliar o painel de máquina e jog
+- melhorar documentação e integração com dispositivos reais
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT. Veja o arquivo [LICENSE](./LICENSE).
