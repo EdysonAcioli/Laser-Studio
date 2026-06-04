@@ -32,6 +32,16 @@ O driver de máquina é projetado para suportar conexões via `serial` / `COM` e
 - máquinas CNC com firmware compatível com G-code
 - sistemas embarcados baseados em ESP32
 
+### Exemplos de máquinas com perfil semelhante
+
+- TTS-55
+- Atomstack A5 Pro / A5 M40
+- Ortur Laser Master 3
+- xTool D1 Pro
+- Sculpfun S9
+- máquinas baseadas em GRBL / Marlin com conexão serial
+- equipamentos de hobby como OMTech, NEJE e similares
+
 ## Recursos principais
 
 - Edição de formas vetoriais: retângulos, linhas, círculos, textos, paths e Bézier
