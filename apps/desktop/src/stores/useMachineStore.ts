@@ -19,6 +19,8 @@ export interface MachineState {
   availablePorts: SerialPortInfo[];
   machineStatus: string;
   machinePosition: { x: number; y: number; z: number };
+  /** Work position (mm) — maps to the design/canvas coordinates. */
+  workPosition: { x: number; y: number; z: number };
   setPort: (port: string) => void;
   setBaudRate: (baudRate: number) => void;
   setFirmware: (firmware: string) => void;
@@ -46,25 +48,49 @@ const defaultConfig: MachineConfig = {
 
 let initialized = false;
 let statusPolling: ReturnType<typeof setInterval> | null = null;
+// GRBL only reports the work-coordinate offset (WCO) intermittently, so we
+// remember the last one to convert MPos → work position between reports.
+let lastWco = { x: 0, y: 0, z: 0 };
+
+function parseTriple(line: string, label: string) {
+  const match = line.match(
+    new RegExp(`${label}:([\\-\\d.]+),([\\-\\d.]+),([\\-\\d.]+)`),
+  );
+  return match
+    ? { x: Number(match[1]), y: Number(match[2]), z: Number(match[3]) }
+    : null;
+}
 
 function parseStatusLine(line: string) {
   const statusMatch = line.match(/^<([^|>]+)/);
-  const positionMatch = line.match(/MPos:([\-\d.]+),([\-\d.]+),([\-\d.]+)/);
+  const mpos = parseTriple(line, "MPos");
+  const wpos = parseTriple(line, "WPos");
+  const wco = parseTriple(line, "WCO");
 
-  if (!statusMatch && !positionMatch) {
+  if (!statusMatch && !mpos && !wpos) {
     return null;
   }
 
+  if (wco) {
+    lastWco = wco;
+  }
+
+  const machinePosition = mpos ?? (wpos ? add(wpos, lastWco) : null);
+  const workPosition = wpos ?? (mpos ? subtract(mpos, lastWco) : null);
+
   return {
     machineStatus: statusMatch?.[1] ?? "unknown",
-    machinePosition: positionMatch
-      ? {
-          x: Number(positionMatch[1]),
-          y: Number(positionMatch[2]),
-          z: Number(positionMatch[3]),
-        }
-      : null,
+    machinePosition,
+    workPosition,
   };
+}
+
+function add(a: { x: number; y: number; z: number }, b: typeof a) {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+function subtract(a: { x: number; y: number; z: number }, b: typeof a) {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
 }
 
 function ensureMachineListeners() {
@@ -111,6 +137,7 @@ function ensureMachineListeners() {
       statusText: line || state.statusText,
       machineStatus: parsed?.machineStatus ?? state.machineStatus,
       machinePosition: parsed?.machinePosition ?? state.machinePosition,
+      workPosition: parsed?.workPosition ?? state.workPosition,
     }));
   });
 
@@ -141,6 +168,7 @@ export const useMachineStore = create<MachineState>((set) => ({
   availablePorts: [],
   machineStatus: "idle",
   machinePosition: { x: 0, y: 0, z: 0 },
+  workPosition: { x: 0, y: 0, z: 0 },
   setPort: (port) => set({ port }),
   setBaudRate: (baudRate) => set({ baudRate }),
   setFirmware: (firmware) => set({ firmware }),

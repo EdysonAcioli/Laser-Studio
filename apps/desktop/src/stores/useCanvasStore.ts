@@ -50,17 +50,23 @@ export interface CanvasState {
   selectedTool: ToolType;
   objects: VectorObject[];
   activeObjectId: string | null;
+  selectedIds: string[];
   snapToGrid: boolean;
   cursorWorld: { x: number; y: number };
   history: VectorObject[][];
   historyIndex: number;
   setSelectedTool: (tool: ToolType) => void;
   setActiveObjectId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelected: (id: string) => void;
+  selectAll: () => void;
   setObjects: (objects: VectorObject[]) => void;
   setObjectsSilently: (objects: VectorObject[]) => void;
   addObject: (object: VectorObject) => void;
   updateObject: (id: string, partial: Partial<VectorObject>) => void;
+  updateObjects: (ids: string[], partial: Partial<VectorObject>) => void;
   removeObject: (id: string) => void;
+  removeObjects: (ids: string[]) => void;
   clearObjects: () => void;
   undo: () => void;
   redo: () => void;
@@ -68,35 +74,67 @@ export interface CanvasState {
   setCursorWorld: (position: { x: number; y: number }) => void;
 }
 
+function pruneSelection(ids: string[], objects: VectorObject[]): string[] {
+  const present = new Set(objects.map((object) => object.id));
+  return ids.filter((id) => present.has(id));
+}
+
 export const useCanvasStore = create<CanvasState>((set) => ({
   selectedTool: "select",
   objects: [],
   activeObjectId: null,
+  selectedIds: [],
   snapToGrid: true,
   cursorWorld: { x: 0, y: 0 },
   history: [[]],
   historyIndex: 0,
   setSelectedTool: (tool) => set({ selectedTool: tool }),
-  setActiveObjectId: (id) => set({ activeObjectId: id }),
+  setActiveObjectId: (id) =>
+    set({ activeObjectId: id, selectedIds: id ? [id] : [] }),
+  setSelectedIds: (ids) =>
+    set({ selectedIds: ids, activeObjectId: ids[ids.length - 1] ?? null }),
+  toggleSelected: (id) =>
+    set((state) => {
+      const exists = state.selectedIds.includes(id);
+      const selectedIds = exists
+        ? state.selectedIds.filter((item) => item !== id)
+        : [...state.selectedIds, id];
+      return {
+        selectedIds,
+        activeObjectId: exists
+          ? (selectedIds[selectedIds.length - 1] ?? null)
+          : id,
+      };
+    }),
+  selectAll: () =>
+    set((state) => {
+      const selectedIds = state.objects.map((object) => object.id);
+      return {
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
+      };
+    }),
   setObjects: (objects) =>
     set((state) => {
       const next = pushHistory(state.history, state.historyIndex, objects);
+      const selectedIds = pruneSelection(state.selectedIds, objects);
       return {
         objects,
-        activeObjectId: objects.some((obj) => obj.id === state.activeObjectId)
-          ? state.activeObjectId
-          : null,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
         history: next.history,
         historyIndex: next.historyIndex,
       };
     }),
   setObjectsSilently: (objects) =>
-    set((state) => ({
-      objects,
-      activeObjectId: objects.some((obj) => obj.id === state.activeObjectId)
-        ? state.activeObjectId
-        : null,
-    })),
+    set((state) => {
+      const selectedIds = pruneSelection(state.selectedIds, objects);
+      return {
+        objects,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
+      };
+    }),
   addObject: (object) =>
     set((state) => {
       const objects = [...state.objects, object];
@@ -104,6 +142,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       return {
         objects,
         activeObjectId: object.id,
+        selectedIds: [object.id],
         history: next.history,
         historyIndex: next.historyIndex,
       };
@@ -120,14 +159,42 @@ export const useCanvasStore = create<CanvasState>((set) => ({
         historyIndex: next.historyIndex,
       };
     }),
+  updateObjects: (ids, partial) =>
+    set((state) => {
+      const idSet = new Set(ids);
+      const objects = state.objects.map((obj) =>
+        idSet.has(obj.id) ? { ...obj, ...partial } : obj,
+      );
+      const next = pushHistory(state.history, state.historyIndex, objects);
+      return {
+        objects,
+        history: next.history,
+        historyIndex: next.historyIndex,
+      };
+    }),
   removeObject: (id) =>
     set((state) => {
       const objects = state.objects.filter((obj) => obj.id !== id);
       const next = pushHistory(state.history, state.historyIndex, objects);
+      const selectedIds = pruneSelection(state.selectedIds, objects);
       return {
         objects,
-        activeObjectId:
-          state.activeObjectId === id ? null : state.activeObjectId,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
+        history: next.history,
+        historyIndex: next.historyIndex,
+      };
+    }),
+  removeObjects: (ids) =>
+    set((state) => {
+      const idSet = new Set(ids);
+      const objects = state.objects.filter((obj) => !idSet.has(obj.id));
+      const next = pushHistory(state.history, state.historyIndex, objects);
+      const selectedIds = pruneSelection(state.selectedIds, objects);
+      return {
+        objects,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
         history: next.history,
         historyIndex: next.historyIndex,
       };
@@ -139,6 +206,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       return {
         objects,
         activeObjectId: null,
+        selectedIds: [],
         history: next.history,
         historyIndex: next.historyIndex,
       };
@@ -151,12 +219,12 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
       const historyIndex = state.historyIndex - 1;
       const objects = structuredClone(state.history[historyIndex] ?? []);
+      const selectedIds = pruneSelection(state.selectedIds, objects);
       return {
         objects,
         historyIndex,
-        activeObjectId: objects.some((obj) => obj.id === state.activeObjectId)
-          ? state.activeObjectId
-          : null,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
       };
     }),
   redo: () =>
@@ -167,12 +235,12 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
       const historyIndex = state.historyIndex + 1;
       const objects = structuredClone(state.history[historyIndex] ?? []);
+      const selectedIds = pruneSelection(state.selectedIds, objects);
       return {
         objects,
         historyIndex,
-        activeObjectId: objects.some((obj) => obj.id === state.activeObjectId)
-          ? state.activeObjectId
-          : null,
+        selectedIds,
+        activeObjectId: selectedIds[selectedIds.length - 1] ?? null,
       };
     }),
   setSnapToGrid: (enabled) => set({ snapToGrid: enabled }),

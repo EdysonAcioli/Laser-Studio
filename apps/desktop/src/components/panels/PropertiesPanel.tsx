@@ -1,3 +1,4 @@
+import type { LayerConfig, VectorObject } from "@laser/shared-types";
 import { useCanvasStore } from "../../stores/useCanvasStore";
 import { useLayerStore } from "../../stores/useLayerStore";
 
@@ -6,8 +7,23 @@ const inputCls =
   "w-full rounded border border-border bg-[#141a21] px-3 py-1.5 text-xs text-slate-100 focus:border-accent focus:outline-none";
 
 export function PropertiesPanel() {
-  const { objects, activeObjectId, updateObject } = useCanvasStore();
+  const { objects, activeObjectId, selectedIds, updateObject, updateObjects } =
+    useCanvasStore();
   const layers = useLayerStore((state) => state.layers);
+
+  // Batch editor when more than one object is selected.
+  if (selectedIds.length > 1) {
+    const selected = objects.filter((o) => selectedIds.includes(o.id));
+    return (
+      <MultiPropertiesPanel
+        count={selected.length}
+        selected={selected}
+        ids={selectedIds}
+        layers={layers}
+        updateObjects={updateObjects}
+      />
+    );
+  }
 
   const obj = objects.find((o) => o.id === activeObjectId);
   const metadata = obj?.metadata ?? {};
@@ -355,6 +371,122 @@ export function PropertiesPanel() {
             className="h-4 w-4 rounded accent-accent"
           />
           <span className={labelCls}>Air Assist</span>
+        </label>
+      </div>
+    </section>
+  );
+}
+
+function common<T>(items: VectorObject[], pick: (o: VectorObject) => T): T | "" {
+  if (items.length === 0) return "";
+  const first = pick(items[0]);
+  return items.every((item) => pick(item) === first) ? first : "";
+}
+
+function MultiPropertiesPanel({
+  count,
+  selected,
+  ids,
+  layers,
+  updateObjects,
+}: {
+  count: number;
+  selected: VectorObject[];
+  ids: string[];
+  layers: LayerConfig[];
+  updateObjects: (ids: string[], partial: Partial<VectorObject>) => void;
+}) {
+  const layerValue = common(selected, (o) => o.layer);
+  const powerValue = common(selected, (o) => o.power);
+  const speedValue = common(selected, (o) => o.speed);
+  const passesValue = common(selected, (o) => o.passes);
+  const rotationValue = common(selected, (o) => o.rotation);
+  const allAir = selected.every((o) => o.airAssist);
+
+  const numField = (
+    label: string,
+    value: number | "",
+    onChange: (value: number) => void,
+    step = 1,
+  ) => (
+    <label className="grid gap-1">
+      <span className={labelCls}>{label}</span>
+      <input
+        type="number"
+        step={step}
+        className={inputCls}
+        placeholder="—"
+        value={value === "" ? "" : value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+
+  return (
+    <section className="rounded-xl border border-border bg-[#11151b] p-4 text-sm text-slate-200 shadow-lg">
+      <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.22em] text-slate-500">
+        <span>Propriedades</span>
+        <span className="rounded bg-[#1f2730] px-2 py-0.5 text-xs text-slate-300">
+          {count} objetos
+        </span>
+      </div>
+
+      <div className="grid gap-3">
+        <p className="text-xs text-slate-500">
+          As alterações abaixo são aplicadas a todos os objetos selecionados.
+        </p>
+
+        <label className="grid gap-1">
+          <span className={labelCls}>Camada</span>
+          <select
+            className={inputCls}
+            value={layerValue}
+            onChange={(e) => updateObjects(ids, { layer: e.target.value })}
+          >
+            <option value="" disabled>
+              {layerValue === "" ? "Misto" : "Selecione"}
+            </option>
+            {layers.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="grid gap-1">
+          <span className={labelCls}>Rotação (°)</span>
+          <input
+            type="number"
+            className={inputCls}
+            placeholder="—"
+            value={rotationValue === "" ? "" : rotationValue}
+            onChange={(e) =>
+              updateObjects(ids, { rotation: Number(e.target.value) })
+            }
+          />
+        </label>
+
+        <div className="grid grid-cols-3 gap-2 rounded border border-border bg-[#101620] p-3">
+          {numField("Potência (%)", powerValue, (v) =>
+            updateObjects(ids, { power: Math.max(0, Math.min(100, v)) }),
+          )}
+          {numField("Velocidade", speedValue, (v) =>
+            updateObjects(ids, { speed: Math.max(1, v) }),
+          )}
+          {numField("Passes", passesValue, (v) =>
+            updateObjects(ids, { passes: Math.max(1, Math.round(v)) }),
+          )}
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={allAir}
+            onChange={(e) => updateObjects(ids, { airAssist: e.target.checked })}
+            className="h-4 w-4 rounded accent-accent"
+          />
+          <span className={labelCls}>Air Assist em todos</span>
         </label>
       </div>
     </section>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCanvasStore } from "../stores/useCanvasStore";
 import { useLayerStore } from "../stores/useLayerStore";
 import { useSettingsStore } from "../stores/useSettingsStore";
+import { useMachineStore } from "../stores/useMachineStore";
 import { nestObjects } from "../utils/nesting";
 import type { VectorObject } from "@laser/shared-types";
 
@@ -15,7 +16,7 @@ type Point = { x: number; y: number };
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 
 // Clipboard shared across the editor session for copy/paste.
-let clipboard: VectorObject | null = null;
+let clipboard: VectorObject[] = [];
 type PathNode =
   | { type: "M"; x: number; y: number }
   | { type: "L"; x: number; y: number }
@@ -63,6 +64,7 @@ type InteractionState =
   | {
       type: "move";
       objectId: string;
+      ids: string[];
       start: Point;
       baseObjects: VectorObject[];
     }
@@ -71,6 +73,12 @@ type InteractionState =
       objectId: string;
       handle: ResizeHandle;
       baseObjects: VectorObject[];
+    }
+  | {
+      type: "marquee";
+      start: Point;
+      current: Point;
+      additive: boolean;
     };
 
 export function EditorCanvas() {
@@ -84,8 +92,11 @@ export function EditorCanvas() {
     (state) => state.setObjectsSilently,
   );
   const activeObjectId = useCanvasStore((state) => state.activeObjectId);
+  const selectedIds = useCanvasStore((state) => state.selectedIds);
   const addObject = useCanvasStore((state) => state.addObject);
   const setActiveObjectId = useCanvasStore((state) => state.setActiveObjectId);
+  const setSelectedIds = useCanvasStore((state) => state.setSelectedIds);
+  const toggleSelected = useCanvasStore((state) => state.toggleSelected);
   const snapToGrid = useCanvasStore((state) => state.snapToGrid);
   const setSnapToGrid = useCanvasStore((state) => state.setSnapToGrid);
   const setCursorWorld = useCanvasStore((state) => state.setCursorWorld);
@@ -94,6 +105,12 @@ export function EditorCanvas() {
   const activeLayerId = useLayerStore((state) => state.activeLayerId);
   const { cameraOffsetX, cameraOffsetY, workspaceWidth, workspaceHeight } =
     useSettingsStore((state) => state.machineConfig);
+  const machineConnected = useMachineStore(
+    (state) => state.state === "connected",
+  );
+  const machineStatus = useMachineStore((state) => state.machineStatus);
+  const workPosition = useMachineStore((state) => state.workPosition);
+  const sendMachineCommand = useMachineStore((state) => state.sendCommand);
 
   const panRef = useRef<Point>({ x: 0, y: 0 });
   const zoomRef = useRef(1);
@@ -147,15 +164,17 @@ export function EditorCanvas() {
     ctx.fillStyle = "rgba(30,50,80,0.07)";
     ctx.fillRect(0, 0, workspaceWidth, workspaceHeight);
 
+    const selectedSet = new Set(selectedIds);
     objects.forEach((object) => {
       const layer = layers.find((item) => item.id === object.layer);
       if (layer?.visible === false) {
         return;
       }
 
+      const isSelected = selectedSet.has(object.id);
       const objectColor = layer?.color || "#f97316";
-      ctx.strokeStyle = object.id === activeObjectId ? "#f8fafc" : objectColor;
-      ctx.lineWidth = (object.id === activeObjectId ? 2 : 1.4) / zoomLevel;
+      ctx.strokeStyle = isSelected ? "#f8fafc" : objectColor;
+      ctx.lineWidth = (isSelected ? 2 : 1.4) / zoomLevel;
       ctx.fillStyle =
         object.fill && object.fill !== "none" ? object.fill : "transparent";
       drawObject(
@@ -168,24 +187,43 @@ export function EditorCanvas() {
         objectColor,
       );
 
-      if (object.id === activeObjectId) {
+      if (isSelected) {
         drawSelection(
           ctx,
           getObjectBounds(object),
           zoomLevel,
           object.rotation,
           object.position,
+          // Resize handles only make sense for a single selection.
+          selectedIds.length === 1,
         );
       }
     });
+
+    if (machineConnected) {
+      drawLaserHead(ctx, workPosition, zoomLevel, machineStatus);
+    }
 
     if (interaction.type === "draw" || interaction.type === "draw-path") {
       drawPreview(ctx, interaction, zoomLevel);
     }
 
+    if (interaction.type === "marquee") {
+      const rect = normalizeRect(interaction.start, interaction.current);
+      ctx.save();
+      ctx.strokeStyle = "#5d8bff";
+      ctx.fillStyle = "rgba(93, 139, 255, 0.12)";
+      ctx.lineWidth = 1 / zoomLevel;
+      ctx.setLineDash([4 / zoomLevel, 3 / zoomLevel]);
+      ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.restore();
+    }
+
     ctx.restore();
   }, [
     activeObjectId,
+    selectedIds,
     cameraOffsetX,
     cameraOffsetY,
     workspaceWidth,
@@ -193,6 +231,10 @@ export function EditorCanvas() {
     interaction,
     layers,
     objects,
+    machineConnected,
+    machineStatus,
+    workPosition.x,
+    workPosition.y,
   ]);
 
   useEffect(() => {
@@ -349,11 +391,20 @@ export function EditorCanvas() {
       return;
     }
 
-    const hit =
-      [...objects].reverse().find((object) => {
-        const layer = layers.find((item) => item.id === object.layer);
-        return layer?.visible !== false && hitTestObject(point, object);
-      }) ?? null;
+    // All objects under the cursor, topmost first.
+    const hits = [...objects].reverse().filter((object) => {
+      const layer = layers.find((item) => item.id === object.layer);
+      return layer?.visible !== false && hitTestObject(point, object);
+    });
+    // Cycle through stacked objects: a repeated click on the same overlap
+    // selects the next one underneath instead of always grabbing the top.
+    let hit = hits[0] ?? null;
+    if (hits.length > 1 && activeObjectId) {
+      const activeIndex = hits.findIndex((object) => object.id === activeObjectId);
+      if (activeIndex !== -1) {
+        hit = hits[(activeIndex + 1) % hits.length];
+      }
+    }
 
     if (selectedTool === "offset") {
       const target = hit ?? activeObject;
@@ -396,7 +447,10 @@ export function EditorCanvas() {
       }
     }
 
-    if (selectedTool === "select" && activeObject) {
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+
+    // Resize handles are only offered for a single selection.
+    if (selectedTool === "select" && activeObject && selectedIds.length <= 1) {
       const handle = hitResizeHandle(
         localPoint(point, activeObject),
         getObjectBounds(activeObject),
@@ -413,15 +467,42 @@ export function EditorCanvas() {
       }
     }
 
-    setActiveObjectId(hit?.id ?? null);
-    if (hit) {
+    // Shift / Ctrl click toggles an object in/out of the selection.
+    if (additive && hit) {
+      toggleSelected(hit.id);
+      return;
+    }
+
+    // Plain click on any member of a multi-selection drags the whole group.
+    const underSelected = hits.find((object) => selectedIds.includes(object.id));
+    if (!additive && underSelected && selectedIds.length > 1) {
       setInteraction({
         type: "move",
-        objectId: hit.id,
+        objectId: underSelected.id,
+        ids: [...selectedIds],
         start: point,
         baseObjects: structuredClone(objects),
       });
+      return;
     }
+
+    if (hit) {
+      setActiveObjectId(hit.id);
+      setInteraction({
+        type: "move",
+        objectId: hit.id,
+        ids: [hit.id],
+        start: point,
+        baseObjects: structuredClone(objects),
+      });
+      return;
+    }
+
+    // Empty space → rubber-band marquee selection.
+    if (!additive) {
+      setActiveObjectId(null);
+    }
+    setInteraction({ type: "marquee", start: point, current: point, additive });
   };
 
   const onMouseMove = (event: React.MouseEvent) => {
@@ -496,15 +577,25 @@ export function EditorCanvas() {
       return;
     }
 
+    if (interaction.type === "marquee") {
+      setInteraction({ ...interaction, current: point });
+      return;
+    }
+
     if (interaction.type === "move") {
-      const delta = {
+      const rawDelta = {
         x: point.x - interaction.start.x,
         y: point.y - interaction.start.y,
       };
+      const ids = new Set(interaction.ids);
+      const isGroup = interaction.ids.length > 1;
+      // For a group, move rigidly (snap the shared delta) so objects keep
+      // their relative positions; single objects snap individually.
+      const delta = isGroup && snapToGrid ? snapDelta(rawDelta) : rawDelta;
       setObjectsSilently(
         interaction.baseObjects.map((object) =>
-          object.id === interaction.objectId
-            ? moveObject(object, delta, snapToGrid)
+          ids.has(object.id)
+            ? moveObject(object, delta, isGroup ? false : snapToGrid)
             : object,
         ),
       );
@@ -548,6 +639,31 @@ export function EditorCanvas() {
       return;
     }
 
+    if (interaction.type === "marquee") {
+      const rect = normalizeRect(interaction.start, interaction.current);
+      if (rect.width < 2 && rect.height < 2) {
+        // A click (not a drag) on empty space clears the selection.
+        if (!interaction.additive) {
+          setSelectedIds([]);
+        }
+        setInteraction({ type: "idle" });
+        return;
+      }
+      const inside = objects
+        .filter((object) => {
+          const layer = layers.find((item) => item.id === object.layer);
+          if (layer?.visible === false) return false;
+          return rectsIntersect(rect, getObjectBounds(object));
+        })
+        .map((object) => object.id);
+      const next = interaction.additive
+        ? Array.from(new Set([...selectedIds, ...inside]))
+        : inside;
+      setSelectedIds(next);
+      setInteraction({ type: "idle" });
+      return;
+    }
+
     if (
       interaction.type === "move" ||
       interaction.type === "resize" ||
@@ -582,26 +698,32 @@ export function EditorCanvas() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (interaction.type !== "idle") return;
 
-      const active = objects.find((object) => object.id === activeObjectId);
+      const selectedSet = new Set(selectedIds);
+      const selected = objects.filter((object) => selectedSet.has(object.id));
       const ctrl = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
+      const paste = (source: VectorObject[]) => {
+        if (source.length === 0) return;
+        const copies = source.map((object, index) =>
+          duplicateObject(object, objects.length + index),
+        );
+        setObjects([...objects, ...copies]);
+        setSelectedIds(copies.map((copy) => copy.id));
+      };
+
       if (ctrl && key === "d") {
         event.preventDefault();
-        if (active) {
-          addObject(duplicateObject(active, objects.length));
-        }
+        paste(selected);
         return;
       }
       if (ctrl && key === "c") {
-        if (active) clipboard = structuredClone(active);
+        if (selected.length) clipboard = selected.map((o) => structuredClone(o));
         return;
       }
       if (ctrl && key === "v") {
         event.preventDefault();
-        if (clipboard) {
-          addObject(duplicateObject(clipboard, objects.length));
-        }
+        paste(clipboard);
         return;
       }
 
@@ -612,23 +734,28 @@ export function EditorCanvas() {
         ArrowDown: { x: 0, y: 1 },
       };
       const nudge = nudges[event.key];
-      if (nudge && active) {
+      if (nudge && selected.length) {
         event.preventDefault();
         const step = event.shiftKey ? 10 : 1;
-        const moved = moveObject(
-          active,
-          { x: nudge.x * step, y: nudge.y * step },
-          false,
-        );
+        const delta = { x: nudge.x * step, y: nudge.y * step };
         setObjects(
-          objects.map((object) => (object.id === active.id ? moved : object)),
+          objects.map((object) =>
+            selectedSet.has(object.id) ? moveObject(object, delta, false) : object,
+          ),
         );
       }
     };
 
     window.addEventListener("keydown", handleEditKeys);
     return () => window.removeEventListener("keydown", handleEditKeys);
-  }, [interaction.type, objects, activeObjectId, addObject, setObjects]);
+  }, [
+    interaction.type,
+    objects,
+    selectedIds,
+    addObject,
+    setObjects,
+    setSelectedIds,
+  ]);
 
   const onDoubleClick = (event: React.MouseEvent) => {
     if (interaction.type === "draw-path" && interaction.points.length >= 2) {
@@ -678,6 +805,11 @@ export function EditorCanvas() {
 
   const autoLayout = () => {
     setObjects(nestObjects(objects, workspaceWidth, workspaceHeight, 12));
+  };
+
+  // Define the laser's current spot as the job origin (work zero).
+  const setOrigin = () => {
+    void sendMachineCommand("G92 X0 Y0");
   };
 
   const resetView = () => {
@@ -779,7 +911,26 @@ export function EditorCanvas() {
         >
           {snapToGrid ? "Snap on" : "Snap off"}
         </button>
+        {machineConnected && (
+          <button
+            type="button"
+            onClick={setOrigin}
+            title="Define a posição atual do laser como ponto inicial (G92 X0 Y0)"
+            className="rounded border border-emerald-500/60 bg-[#10261d]/90 px-3 py-2 text-xs text-emerald-300 transition hover:border-emerald-400"
+          >
+            ⌖ Definir início
+          </button>
+        )}
       </div>
+      {machineConnected && (
+        <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded border border-emerald-500/40 bg-[#10261d]/80 px-3 py-1.5 text-xs text-emerald-300 backdrop-blur-sm">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          <span>
+            Laser em X{workPosition.x.toFixed(1)} Y{workPosition.y.toFixed(1)} mm
+          </span>
+          <span className="text-emerald-500/70">· {machineStatus}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1121,6 +1272,7 @@ function drawSelection(
   zoom: number,
   rotation = 0,
   pivot: Point = { x: bounds.x, y: bounds.y },
+  showHandles = true,
 ) {
   ctx.save();
   if (rotation) {
@@ -1134,15 +1286,17 @@ function drawSelection(
   ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
   ctx.setLineDash([]);
 
-  Object.values(getHandlePoints(bounds)).forEach((handle) => {
-    ctx.fillStyle = "#5d8bff";
-    ctx.fillRect(
-      handle.x - HANDLE_SIZE / 2 / zoom,
-      handle.y - HANDLE_SIZE / 2 / zoom,
-      HANDLE_SIZE / zoom,
-      HANDLE_SIZE / zoom,
-    );
-  });
+  if (showHandles) {
+    Object.values(getHandlePoints(bounds)).forEach((handle) => {
+      ctx.fillStyle = "#5d8bff";
+      ctx.fillRect(
+        handle.x - HANDLE_SIZE / 2 / zoom,
+        handle.y - HANDLE_SIZE / 2 / zoom,
+        HANDLE_SIZE / zoom,
+        HANDLE_SIZE / zoom,
+      );
+    });
+  }
   ctx.restore();
 }
 
@@ -1259,6 +1413,41 @@ function drawPreview(
     );
   }
 
+  ctx.restore();
+}
+
+function drawLaserHead(
+  ctx: CanvasRenderingContext2D,
+  pos: { x: number; y: number },
+  zoom: number,
+  status: string,
+) {
+  const r = 9 / zoom;
+  const running = /run|jog|hold/i.test(status);
+  const color = running ? "#f87171" : "#34d399";
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5 / zoom;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.7, 0);
+  ctx.lineTo(r * 1.7, 0);
+  ctx.moveTo(0, -r * 1.7);
+  ctx.lineTo(0, r * 1.7);
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.2 / zoom, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = `${11 / zoom}px sans-serif`;
+  ctx.fillText(
+    `Laser X${pos.x.toFixed(1)} Y${pos.y.toFixed(1)}`,
+    r * 1.9,
+    -r * 1.9,
+  );
   ctx.restore();
 }
 
@@ -1877,6 +2066,25 @@ function snap(point: Point, enabled: boolean) {
     x: Math.round(point.x / GRID_MINOR) * GRID_MINOR,
     y: Math.round(point.y / GRID_MINOR) * GRID_MINOR,
   };
+}
+
+function snapDelta(delta: Point): Point {
+  return {
+    x: Math.round(delta.x / GRID_MINOR) * GRID_MINOR,
+    y: Math.round(delta.y / GRID_MINOR) * GRID_MINOR,
+  };
+}
+
+function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
 }
 
 function duplicateObject(object: VectorObject, zIndex: number): VectorObject {

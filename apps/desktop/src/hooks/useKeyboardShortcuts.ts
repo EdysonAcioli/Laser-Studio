@@ -19,8 +19,14 @@ const TOOL_KEYS: Record<string, ToolType> = {
 };
 
 export function useKeyboardShortcuts() {
-  const { setSelectedTool, removeObject, activeObjectId, undo, redo } =
-    useCanvasStore();
+  const {
+    setSelectedTool,
+    removeObjects,
+    selectedIds,
+    selectAll,
+    undo,
+    redo,
+  } = useCanvasStore();
   const { sendCommand, state } = useMachineStore();
 
   useEffect(() => {
@@ -37,9 +43,9 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Delete selected object
+      // Delete selected objects
       if (key === "delete" || key === "backspace") {
-        if (activeObjectId) removeObject(activeObjectId);
+        if (selectedIds.length) removeObjects(selectedIds);
         return;
       }
 
@@ -65,9 +71,10 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Select all (future)
+      // Select all
       if (e.ctrlKey && key === "a") {
         e.preventDefault();
+        selectAll();
         return;
       }
 
@@ -82,8 +89,9 @@ export function useKeyboardShortcuts() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     setSelectedTool,
-    removeObject,
-    activeObjectId,
+    removeObjects,
+    selectedIds,
+    selectAll,
     sendCommand,
     state,
     undo,
