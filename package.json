@@ -2,7 +2,7 @@
   "name": "laser-studio",
   "private": true,
   "version": "0.1.0",
-  "description": "Monorepo para software profissional de controle CNC laser inspirado no LightBurn.",
+  "description": "Monorepo para software profissional de controle CNC laser.",
   "author": "Laser Studio Team",
   "license": "MIT",
   "repository": {
