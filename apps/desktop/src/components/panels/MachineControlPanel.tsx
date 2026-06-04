@@ -20,6 +20,8 @@ export function MachineControlPanel() {
     setFirmware,
   } = useMachineStore();
 
+  const homeCommand = firmware === "grbl" ? "$H" : "G28 X0 Z0";
+
   useEffect(() => {
     void refreshPorts();
   }, [refreshPorts]);
@@ -97,10 +99,19 @@ export function MachineControlPanel() {
             Parar
           </button>
         </div>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            onClick={() => void sendCommand(homeCommand)}
+            className="rounded bg-[#2563eb] px-3 py-2 text-slate-200 transition hover:bg-[#1d4ed8]"
+          >
+            Home X/Z
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-2 rounded border border-border bg-[#141a21] p-3 text-xs text-slate-400">
           <span>Status firmware: {machineStatus}</span>
           <span>
-            X {machinePosition.x.toFixed(2)} / Y {machinePosition.y.toFixed(2)} / Z {machinePosition.z.toFixed(2)}
+            X {machinePosition.x.toFixed(2)} / Y {machinePosition.y.toFixed(2)}{" "}
+            / Z {machinePosition.z.toFixed(2)}
           </span>
         </div>
         <button
