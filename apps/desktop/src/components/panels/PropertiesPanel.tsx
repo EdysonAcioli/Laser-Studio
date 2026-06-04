@@ -23,22 +23,23 @@ export function PropertiesPanel() {
     );
   }
 
-  const field = <K extends keyof typeof obj>(
+  const setMeta = (patch: Record<string, unknown>) =>
+    updateObject(obj.id, { metadata: { ...metadata, ...patch } });
+
+  const numberField = (
     label: string,
-    key: K,
-    type = "text",
+    value: number,
+    onChange: (value: number) => void,
+    step = 1,
   ) => (
     <label className="grid gap-1">
       <span className={labelCls}>{label}</span>
       <input
-        type={type}
+        type="number"
+        step={step}
         className={inputCls}
-        value={String((obj as any)[key] ?? "")}
-        onChange={(e) =>
-          updateObject(obj.id, {
-            [key]: type === "number" ? Number(e.target.value) : e.target.value,
-          } as any)
-        }
+        value={Number.isFinite(value) ? value : 0}
+        onChange={(e) => onChange(Number(e.target.value))}
       />
     </label>
   );
@@ -110,6 +111,64 @@ export function PropertiesPanel() {
               }
             />
           </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="grid gap-1">
+            <span className={labelCls}>Escala Y</span>
+            <input
+              type="number"
+              step="0.01"
+              className={inputCls}
+              value={obj.scale.y.toFixed(2)}
+              onChange={(e) =>
+                updateObject(obj.id, {
+                  scale: { ...obj.scale, y: Number(e.target.value) },
+                })
+              }
+            />
+          </label>
+        </div>
+
+        {/* Dimensões por tipo */}
+        {(obj.type === "rectangle" ||
+          obj.type === "bitmap" ||
+          obj.type === "ellipse") && (
+          <div className="grid grid-cols-2 gap-2">
+            {numberField(
+              "Largura (mm)",
+              Number(metadata.width ?? 80),
+              (v) => setMeta({ width: Math.max(1, v) }),
+            )}
+            {numberField(
+              "Altura (mm)",
+              Number(metadata.height ?? 50),
+              (v) => setMeta({ height: Math.max(1, v) }),
+            )}
+          </div>
+        )}
+        {obj.type === "circle" && (
+          <div className="grid grid-cols-2 gap-2">
+            {numberField(
+              "Raio (mm)",
+              Number(metadata.radius ?? 30),
+              (v) => setMeta({ radius: Math.max(0.5, v) }),
+              0.5,
+            )}
+          </div>
+        )}
+
+        {/* Parâmetros de corte/gravação */}
+        <div className="grid grid-cols-3 gap-2 rounded border border-border bg-[#101620] p-3">
+          {numberField("Potência (%)", obj.power, (v) =>
+            updateObject(obj.id, { power: Math.max(0, Math.min(100, v)) }),
+          )}
+          {numberField("Velocidade", obj.speed, (v) =>
+            updateObject(obj.id, { speed: Math.max(1, v) }),
+          )}
+          {numberField("Passes", obj.passes, (v) =>
+            updateObject(obj.id, { passes: Math.max(1, Math.round(v)) }),
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">

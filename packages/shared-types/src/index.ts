@@ -13,6 +13,25 @@ export type VectorObjectType =
 
 export type LayerMode = "fill" | "line" | "offset-fill" | "image";
 
+/**
+ * A single node of a vector path. Coordinates are absolute (world space).
+ * Shared between the editor, importers and the G-code engine so that imported
+ * artwork can be edited node-by-node and converted to tool paths consistently.
+ */
+export type PathNode =
+  | { type: "M"; x: number; y: number }
+  | { type: "L"; x: number; y: number }
+  | { type: "Q"; x: number; y: number; cx: number; cy: number }
+  | {
+      type: "C";
+      x: number;
+      y: number;
+      cx1: number;
+      cy1: number;
+      cx2: number;
+      cy2: number;
+    };
+
 export interface VectorObject {
   id: string;
   type: VectorObjectType;

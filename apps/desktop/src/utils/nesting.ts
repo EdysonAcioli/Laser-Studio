@@ -217,10 +217,9 @@ export function nestObjects(
   const rows: Array<{ x: number; y: number; height: number }> = [
     { x: padding, y: padding, height: 0 },
   ];
-  const placements = new Array(objects.length).fill<null | {
-    x: number;
-    y: number;
-  }>(null);
+  const placements: Array<{ x: number; y: number } | null> = new Array(
+    objects.length,
+  ).fill(null);
 
   items.forEach((item) => {
     let placed = false;

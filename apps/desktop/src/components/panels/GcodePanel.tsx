@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useCanvasStore } from "../../stores/useCanvasStore";
 import { useLayerStore } from "../../stores/useLayerStore";
 import { useMachineStore } from "../../stores/useMachineStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import {
   generateGcode,
   estimateJobTime,
@@ -22,7 +23,13 @@ export function GcodePanel() {
   const objects = useCanvasStore((state) => state.objects);
   const layers = useLayerStore((state) => state.layers);
   const { sendCommand, state: machineState } = useMachineStore();
+  const machineConfig = useSettingsStore((state) => state.machineConfig);
   const [flavor, setFlavor] = useState<GCodeFlavor>("grbl");
+
+  const gcodeOptions = useMemo(
+    () => ({ pwmMax: machineConfig.pwmMax, rapidRate: machineConfig.maxSpeed }),
+    [machineConfig.pwmMax, machineConfig.maxSpeed],
+  );
 
   const preparedObjects = useMemo(
     () =>
@@ -37,10 +44,13 @@ export function GcodePanel() {
   );
   const optimized = useMemo(() => optimizePath(preparedObjects), [preparedObjects]);
   const previewCode = useMemo(
-    () => generateGcode(optimized, flavor),
-    [optimized, flavor],
+    () => generateGcode(optimized, flavor, gcodeOptions),
+    [optimized, flavor, gcodeOptions],
   );
-  const estimate = useMemo(() => estimateJobTime(optimized), [optimized]);
+  const estimate = useMemo(
+    () => estimateJobTime(optimized, gcodeOptions),
+    [optimized, gcodeOptions],
+  );
 
   const exportFile = () => {
     const blob = new Blob([previewCode], { type: "text/plain" });

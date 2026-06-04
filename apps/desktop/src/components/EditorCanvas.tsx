@@ -13,6 +13,9 @@ const WORKSPACE_HEIGHT = 400;
 
 type Point = { x: number; y: number };
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
+
+// Clipboard shared across the editor session for copy/paste.
+let clipboard: VectorObject | null = null;
 type PathNode =
   | { type: "M"; x: number; y: number }
   | { type: "L"; x: number; y: number }
@@ -166,7 +169,13 @@ export function EditorCanvas() {
       );
 
       if (object.id === activeObjectId) {
-        drawSelection(ctx, getObjectBounds(object), zoomLevel);
+        drawSelection(
+          ctx,
+          getObjectBounds(object),
+          zoomLevel,
+          object.rotation,
+          object.position,
+        );
       }
     });
 
@@ -389,7 +398,7 @@ export function EditorCanvas() {
 
     if (selectedTool === "select" && activeObject) {
       const handle = hitResizeHandle(
-        point,
+        localPoint(point, activeObject),
         getObjectBounds(activeObject),
         zoomRef.current,
       );
@@ -506,7 +515,12 @@ export function EditorCanvas() {
       setObjectsSilently(
         interaction.baseObjects.map((object) =>
           object.id === interaction.objectId
-            ? resizeObject(object, interaction.handle, point, snapToGrid)
+            ? resizeObject(
+                object,
+                interaction.handle,
+                localPoint(point, object),
+                snapToGrid,
+              )
             : object,
         ),
       );
@@ -561,6 +575,60 @@ export function EditorCanvas() {
     return () =>
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
   }, [interaction.type]);
+
+  useEffect(() => {
+    const handleEditKeys = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (interaction.type !== "idle") return;
+
+      const active = objects.find((object) => object.id === activeObjectId);
+      const ctrl = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (ctrl && key === "d") {
+        event.preventDefault();
+        if (active) {
+          addObject(duplicateObject(active, objects.length));
+        }
+        return;
+      }
+      if (ctrl && key === "c") {
+        if (active) clipboard = structuredClone(active);
+        return;
+      }
+      if (ctrl && key === "v") {
+        event.preventDefault();
+        if (clipboard) {
+          addObject(duplicateObject(clipboard, objects.length));
+        }
+        return;
+      }
+
+      const nudges: Record<string, Point> = {
+        ArrowLeft: { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+        ArrowUp: { x: 0, y: -1 },
+        ArrowDown: { x: 0, y: 1 },
+      };
+      const nudge = nudges[event.key];
+      if (nudge && active) {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const moved = moveObject(
+          active,
+          { x: nudge.x * step, y: nudge.y * step },
+          false,
+        );
+        setObjects(
+          objects.map((object) => (object.id === active.id ? moved : object)),
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleEditKeys);
+    return () => window.removeEventListener("keydown", handleEditKeys);
+  }, [interaction.type, objects, activeObjectId, addObject, setObjects]);
 
   const onDoubleClick = (event: React.MouseEvent) => {
     if (interaction.type === "draw-path" && interaction.points.length >= 2) {
@@ -881,12 +949,15 @@ function drawObject(
       ctx.stroke();
       break;
     }
-    case "ellipse":
+    case "ellipse": {
+      const rx = (Number(metadata.width ?? 80) / 2) * scale.x;
+      const ry = (Number(metadata.height ?? 50) / 2) * scale.y;
       ctx.beginPath();
-      ctx.ellipse(0, 0, 40 * scale.x, 25 * scale.y, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       break;
+    }
     case "line": {
       const x2 = Number(metadata.x2 ?? position.x + 80) - position.x;
       const y2 = Number(metadata.y2 ?? position.y) - position.y;
@@ -1048,8 +1119,15 @@ function drawSelection(
   ctx: CanvasRenderingContext2D,
   bounds: { x: number; y: number; width: number; height: number },
   zoom: number,
+  rotation = 0,
+  pivot: Point = { x: bounds.x, y: bounds.y },
 ) {
   ctx.save();
+  if (rotation) {
+    ctx.translate(pivot.x, pivot.y);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-pivot.x, -pivot.y);
+  }
   ctx.strokeStyle = "#f8fafc";
   ctx.lineWidth = 1 / zoom;
   ctx.setLineDash([6 / zoom, 4 / zoom]);
@@ -1508,6 +1586,26 @@ function pointToSegmentDistance(a: Point, b: Point, c: Point) {
   return Math.hypot(c.x - projection.x, c.y - projection.y);
 }
 
+function rotatePoint(point: Point, pivot: Point, angleDeg: number): Point {
+  if (!angleDeg) return point;
+  const rad = (angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = point.x - pivot.x;
+  const dy = point.y - pivot.y;
+  return {
+    x: pivot.x + dx * cos - dy * sin,
+    y: pivot.y + dx * sin + dy * cos,
+  };
+}
+
+/** Map a world point into an object's local (unrotated) frame. */
+function localPoint(point: Point, object: VectorObject): Point {
+  return object.rotation
+    ? rotatePoint(point, object.position, -object.rotation)
+    : point;
+}
+
 function getWorldPoint(
   event: React.MouseEvent,
   canvas: HTMLCanvasElement | null,
@@ -1539,6 +1637,16 @@ function getObjectBounds(object: VectorObject) {
         y: object.position.y - radius,
         width: radius * 2,
         height: radius * 2,
+      };
+    }
+    case "ellipse": {
+      const rx = (Number(metadata.width ?? 80) / 2) * object.scale.x;
+      const ry = (Number(metadata.height ?? 50) / 2) * object.scale.y;
+      return {
+        x: object.position.x - rx,
+        y: object.position.y - ry,
+        width: rx * 2,
+        height: ry * 2,
       };
     }
     case "line": {
@@ -1640,7 +1748,8 @@ function parseDStringBounds(d: string, offset: { x: number; y: number }) {
   };
 }
 
-function hitTestObject(point: Point, object: VectorObject) {
+function hitTestObject(worldPoint: Point, object: VectorObject) {
+  const point = localPoint(worldPoint, object);
   if (object.type === "path" || object.type === "bezier") {
     const points = object.metadata?.points as PathNode[] | undefined;
     if (points && points.length >= 2) {
@@ -1770,6 +1879,15 @@ function snap(point: Point, enabled: boolean) {
   };
 }
 
+function duplicateObject(object: VectorObject, zIndex: number): VectorObject {
+  const shifted = moveObject(object, { x: 10, y: 10 }, false);
+  return {
+    ...shifted,
+    id: Math.random().toString(36).slice(2),
+    zIndex,
+  };
+}
+
 function moveObject(object: VectorObject, delta: Point, snapEnabled: boolean) {
   const translated = {
     ...object,
@@ -1887,6 +2005,74 @@ function resizeObject(
         ...object.metadata,
         x2: rect.x + rect.width,
         y2: rect.y + rect.height,
+      },
+    };
+  }
+
+  if (object.type === "ellipse") {
+    return {
+      ...object,
+      position: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+      scale: { x: 1, y: 1 },
+      metadata: {
+        ...object.metadata,
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
+      },
+    };
+  }
+
+  if (object.type === "path" || object.type === "bezier") {
+    const points = object.metadata?.points as PathNode[] | undefined;
+    if (points && points.length > 0) {
+      const sx = rect.width / Math.max(1e-6, bounds.width);
+      const sy = rect.height / Math.max(1e-6, bounds.height);
+      const mapX = (x: number) => rect.x + (x - bounds.x) * sx;
+      const mapY = (y: number) => rect.y + (y - bounds.y) * sy;
+      const scaled = points.map((node) => {
+        if (node.type === "Q") {
+          return {
+            ...node,
+            x: mapX(node.x),
+            y: mapY(node.y),
+            cx: mapX(node.cx),
+            cy: mapY(node.cy),
+          };
+        }
+        if (node.type === "C") {
+          return {
+            ...node,
+            x: mapX(node.x),
+            y: mapY(node.y),
+            cx1: mapX(node.cx1),
+            cy1: mapY(node.cy1),
+            cx2: mapX(node.cx2),
+            cy2: mapY(node.cy2),
+          };
+        }
+        return { ...node, x: mapX(node.x), y: mapY(node.y) };
+      });
+      return {
+        ...object,
+        position: { x: 0, y: 0 },
+        metadata: {
+          ...object.metadata,
+          points: scaled,
+          d: pathStringFromPoints(scaled),
+        },
+      };
+    }
+  }
+
+  if (object.type === "rectangle" || object.type === "bitmap") {
+    return {
+      ...object,
+      position: { x: rect.x, y: rect.y },
+      scale: { x: 1, y: 1 },
+      metadata: {
+        ...object.metadata,
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
       },
     };
   }
